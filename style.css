@@ -1,0 +1,17 @@
+body {
+    font-family: Arial, Helvetica, sans-serif;
+}
+
+nav {
+    position: sticky;
+    display: flex;
+    margin: auto;
+    background-color: dimgray;
+}
+
+nav navitem {
+    flex: auto;
+    background-color: dimgray;
+    padding: 2%;
+    text-align: center;
+}
