@@ -44,7 +44,7 @@ class Node {
         let x = this.position.first;
         let y = this.position.second;
         this.ctx.arc(x - xOffset, y - yOffset, radius, 0, 2 * Math.PI, false);
-        this.ctx.fillStyle = "rgba(207, 102, 156, 0.4)";
+        this.ctx.fillStyle = "rgba(207, 102, 156, 1)";
         this.ctx.strokeStyle = "rgba(88, 88, 88, 1)";
         this.ctx.fill();
         this.ctx.lineWidth = 3;
@@ -223,12 +223,18 @@ class Visualizer {
     }
 
     testHit(position) {
-        var toReturn = null;
-        this.nodes.forEach(node => {
+        let toReturn = null;
+        // should return whatever is on the top since we reversed it
+        this.nodes.reverse();
+        this.nodes.every(node => {
             if (node.testHit(position, this.getX(), this.getY(), this.scale)) {
                 toReturn = node;
+                return false;
             }
+            return true;
         });
+        // reverse it again so that it is back in the original order
+        this.nodes.reverse();
         return toReturn;
     }
 }
@@ -258,11 +264,10 @@ document.addEventListener("DOMContentLoaded", () => {
     var saveAsHTMLOption = document.getElementById("menu-save-html");
     var saveAsCSVOption = document.getElementById("menu-save-csv");
 
+    // the last position our mouse was dragged at (in this case, )
     var lastDraggingPosition = new Pair(0, 0);
-
+    // the node that is being dragged
     var draggingNode = null;
-
-    var firstFrame = true;
 
     visualizer.draw();
 
@@ -274,7 +279,6 @@ document.addEventListener("DOMContentLoaded", () => {
     // if the mouse leaves the canvas stop dragging
     visualizer.addEventListener("mouseleave", event => {
         dragging = false;
-        firstFrame = true;
         visualizer.canvas.style.cursor = "default";
     });
 
@@ -330,17 +334,27 @@ document.addEventListener("DOMContentLoaded", () => {
         event.cancelBubble = true;
         event.stopPropagation();
         dragging = true;
+        lastDraggingPosition = getCursorPosition(visualizer.canvas, event);
         if (movingItem) {
             let hit = visualizer.testHit(getCursorPosition(visualizer.canvas, event));
             if (hit) {
                 draggingNode = hit;
+                visualizer.canvas.style.cursor = "grab";
+                let movingIdx = visualizer.nodes.indexOf(hit);
+                if (movingIdx != null) {
+                    visualizer.nodes.splice(movingIdx, 1);
+                    visualizer.nodes.push(draggingNode);
+                }
             }
+        } else if (!placing && !connecting && !deleting && !movingItem) {
+            visualizer.canvas.style.cursor = "move";
         }
+        visualizer.draw();
     });
 
     visualizer.addEventListener("mouseup", event => {
         dragging = false;
-        firstFrame = true;
+        draggingNode = null;
         visualizer.canvas.style.cursor = "default";
     });
 
@@ -354,12 +368,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
                 let diffX = newPosition.first - lastDraggingPosition.first;
                 let diffY = newPosition.second - lastDraggingPosition.second;
-
-                if (firstFrame) {
-                    diffX = 0;
-                    diffY = 0;
-                    firstFrame = false;
-                }
 
                 lastDraggingPosition = newPosition;
 
