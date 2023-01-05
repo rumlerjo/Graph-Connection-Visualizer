@@ -55,6 +55,42 @@ class Node {
 
         this.ctx.closePath();
     }
+
+    setPosition(newX, newY) {
+        this.position.first = newX;
+        this.position.second = newY;
+    }
+
+    getX() {
+        return this.position.first;
+    }
+
+    getY() {
+        return this.position.second;
+    }
+
+    testHit(position, xOffset, yOffset, scale = 1) {
+        let scaledRadius = scale * 30;
+
+        // should I add radius and scale as class attributes?
+
+        let adjustedX = position.first + xOffset;
+        let adjustedY = position.second + yOffset;
+
+        let x = this.getX();
+        let y = this.getY();
+
+        let xBoundLeft = x - scaledRadius;
+        let xBoundRight = x + scaledRadius;
+        let yBoundTop = y - scaledRadius;
+        let yBoundBottom = y + scaledRadius;
+
+
+        if (xBoundLeft <= adjustedX && adjustedX <= xBoundRight && yBoundTop <= adjustedY && adjustedY <= yBoundBottom) {
+            return true;
+        }
+        return false;
+    }
 }
 
 /**
@@ -147,11 +183,14 @@ class Visualizer {
         let currentTop = this.currentPosition.second;
         let currentBottom = currentTop + this.canvas.height;
 
+        let scaledRadius = this.scale * 30;
+
         this.nodes.forEach(node => {
             let nodeX = node.position.first;
             let nodeY = node.position.second;
 
-            if (currentLeft <= nodeX <= currentRight && currentTop <= nodeY <= currentBottom) {
+            if (currentLeft <= nodeX + scaledRadius && nodeX - scaledRadius <= currentRight
+                && currentTop <= nodeY + scaledRadius && nodeY - scaledRadius <= currentBottom) {
                 node.display(this.scale, currentLeft, currentTop);
             }
         });
@@ -182,6 +221,16 @@ class Visualizer {
 
         this.ctx.closePath();
     }
+
+    testHit(position) {
+        var toReturn = null;
+        this.nodes.forEach(node => {
+            if (node.testHit(position, this.getX(), this.getY(), this.scale)) {
+                toReturn = node;
+            }
+        });
+        return toReturn;
+    }
 }
 
 // from https://stackoverflow.com/questions/55677/how-do-i-get-the-coordinates-of-a-mouse-click-on-a-canvas-element
@@ -192,6 +241,7 @@ function getCursorPosition(canvas, event) {
     return new Pair(x, y);
 }
 
+// wait until HTML content is loaded before we start manipulating it.
 document.addEventListener("DOMContentLoaded", () => {
     var connectionMap = new Map();
     var visualizer = new Visualizer(document.getElementById("main"));
@@ -210,25 +260,25 @@ document.addEventListener("DOMContentLoaded", () => {
 
     var lastDraggingPosition = new Pair(0, 0);
 
+    var draggingNode = null;
+
     var firstFrame = true;
 
     visualizer.draw();
 
+    // draw the visualizer to adjust with the current screen bounds
     window.addEventListener("resize", event => {
         visualizer.draw();
     });
 
-    window.addEventListener("mouseleave", event => {
-        dragging = false;
-        firstFrame = true;
-    });
-
+    // if the mouse leaves the canvas stop dragging
     visualizer.addEventListener("mouseleave", event => {
         dragging = false;
         firstFrame = true;
         visualizer.canvas.style.cursor = "default";
     });
 
+    // draw menu option click logic
     drawOption.addEventListener("click", (event) => {
         placing = !placing;
         if (placing) {
@@ -238,35 +288,67 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     });
 
+    // draw menu option hover entry logic
     drawOption.addEventListener("mouseover", (event) =>{
         if (!placing) {
             drawOption.style.backgroundColor = "lightgray";
         }
     });
 
+    // draw menu option hover exit logic
     drawOption.addEventListener("mouseleave", (event) => {
         if (!placing) {
             drawOption.style.backgroundColor = "dimgray";
         }
     });
 
-    visualizer.addEventListener("mousedown", function(event) {
+    // move node menu option click logic
+    moveNodeOption.addEventListener("click", (event) => {
+        movingItem = !movingItem;
+        if (movingItem) {
+            moveNodeOption.style.backgroundColor = "lightgray";
+        } else {
+            moveNodeOption.style.backgroundColor = "dimgray";
+        }
+    });
+
+    // move node option hover entry logic
+    moveNodeOption.addEventListener("mouseover", (event) =>{
+        if (!movingItem) {
+            moveNodeOption.style.backgroundColor = "lightgray";
+        }
+    });
+
+    // move node option hover exit logic
+    moveNodeOption.addEventListener("mouseleave", (event) => {
+        if (!movingItem) {
+            moveNodeOption.style.backgroundColor = "dimgray";
+        }
+    });
+
+    visualizer.addEventListener("mousedown", event => {
         event.cancelBubble = true;
         event.stopPropagation();
         dragging = true;
+        if (movingItem) {
+            let hit = visualizer.testHit(getCursorPosition(visualizer.canvas, event));
+            if (hit) {
+                draggingNode = hit;
+            }
+        }
     });
 
-    visualizer.addEventListener("mouseup", function(event) {
+    visualizer.addEventListener("mouseup", event => {
         dragging = false;
         firstFrame = true;
         visualizer.canvas.style.cursor = "default";
     });
 
-    visualizer.addEventListener("mousemove", function(event) {
+    visualizer.addEventListener("mousemove", event => {
         event.cancelBubble = true;
         event.stopPropagation();
         if (dragging) {
-            if (!placing && !connecting && !deleting) {
+            if (!placing && !connecting && !deleting && !movingItem) {
                 let newPosition = getCursorPosition(visualizer.canvas, event);
                 visualizer.canvas.style.cursor = "move";
 
@@ -287,15 +369,24 @@ document.addEventListener("DOMContentLoaded", () => {
                 visualizer.setPosition(newX, newY);
 
                 visualizer.draw();
+            } else if (!placing && !connecting && !deleting && movingItem && draggingNode) {
+                let newPosition = getCursorPosition(visualizer.canvas, event);
+                let xOffset = visualizer.getX();
+                let yOffset = visualizer.getY();
+                let newX = newPosition.first + xOffset;
+                let newY = newPosition.second + yOffset;
+                draggingNode.setPosition(newX, newY);
+
+                visualizer.draw();
             }
         }
     });
 
-    visualizer.addEventListener("click", function(event) {
+    visualizer.addEventListener("click", event => {
         if (placing) {
-            let name = window.prompt("Enter a name for the node", (visualizer.nodes.length + 1).toString());
+            let name = window.prompt("Enter an ID for the node", (visualizer.nodes.length + 1).toString());
             if (!name) {
-                name = (visualizer.nodes.length + 1).toString();
+                return;
             }
             let offset = visualizer.currentPosition;
             let clickPos = getCursorPosition(visualizer.canvas, event);
