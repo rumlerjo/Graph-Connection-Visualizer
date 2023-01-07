@@ -1,7 +1,11 @@
 //TODO: Add docstrings for all functions to help linter
 
+function roundDecimal(num, places) {
+    return Math.round((num + Number.EPSILON) * Math.pow(10, places)) / Math.pow(10, places)
+}
+
 /**
- * A utility class for storing 2 value tuples.
+ * A utility class for storing 2 values. Mutable.
  */
 class Pair {
     /**
@@ -29,8 +33,18 @@ class Node {
         this.position = position;
         this.name = name;
         this.ctx = ctx;
+        // array of connections
+        this.sourceFor = new Array();
+        // array of nodes this is connected to; prevent from connecting a second time
+        this.connectedTo = new Array();
     }
 
+    /**
+     * Display the node
+     * @param {number} scale display scale
+     * @param {number} xOffset x offset to normalize x coordinate
+     * @param {number} yOffset y offset to normalize y coordinate
+     */
     display(scale = 1, xOffset = 0, yOffset = 0) {
         let fontSize = 15 * scale;
         this.ctx.font = `${fontSize}px Arial`;
@@ -41,44 +55,65 @@ class Node {
 
         let radius = 30 * scale;
         // position should be a pair, i should learn typescript
-        let x = this.position.first;
-        let y = this.position.second;
-        this.ctx.arc(x - xOffset, y - yOffset, radius, 0, 2 * Math.PI, false);
+        let x = this.position.first * scale;
+        let y = this.position.second * scale;
+        this.ctx.arc(x - xOffset * scale, y - yOffset * scale, radius, 0, 2 * Math.PI, false);
         this.ctx.fillStyle = "rgba(207, 102, 156, 1)";
         this.ctx.strokeStyle = "rgba(88, 88, 88, 1)";
         this.ctx.fill();
-        this.ctx.lineWidth = 3;
+        this.ctx.lineWidth = 3 * scale;
         this.ctx.stroke();
 
         this.ctx.fillStyle = "rgba(88, 88, 88, 1)";
-        this.ctx.fillText(this.name, x - xOffset, y - yOffset);
+        this.ctx.fillText(this.name, x - xOffset * scale, y - yOffset * scale);
 
         this.ctx.closePath();
     }
 
+    /**
+     * Set the position in virtual coordinate system
+     * @param {number} newX new x coordinate
+     * @param {*} newY new y coordinate
+     */
     setPosition(newX, newY) {
         this.position.first = newX;
         this.position.second = newY;
     }
 
+    /**
+     * Get this node's x coordinate
+     * @returns {number} x coordinate
+     */
     getX() {
         return this.position.first;
     }
 
+    /**
+     * Get this node's y coordinate
+     * @returns {number} y coordinate
+     */
     getY() {
         return this.position.second;
     }
 
+    /**
+     * Test for mouse collision
+     * @param {Pair} position position mouse clicked at
+     * @param {number} xOffset x offset to normalize x coordinate
+     * @param {number} yOffset y offset to normalize y coordinate
+     * @param {number} scale display scale
+     * @returns {boolean} true if collision false otherwise
+     */
     testHit(position, xOffset, yOffset, scale = 1) {
         let scaledRadius = scale * 30;
 
         // should I add radius and scale as class attributes?
 
-        let adjustedX = position.first + xOffset;
-        let adjustedY = position.second + yOffset;
+        let adjustedX = (position.first) + (xOffset * scale);
+        let adjustedY = (position.second) + (yOffset * scale);
 
-        let x = this.getX();
-        let y = this.getY();
+        let x = this.getX() * scale;
+        let y = this.getY() * scale;
 
         let xBoundLeft = x - scaledRadius;
         let xBoundRight = x + scaledRadius;
@@ -87,9 +122,38 @@ class Node {
 
 
         if (xBoundLeft <= adjustedX && adjustedX <= xBoundRight && yBoundTop <= adjustedY && adjustedY <= yBoundBottom) {
+            console.log("hit", this);
             return true;
         }
         return false;
+    }
+
+    /**
+     * Check if this node is connected to another
+     * @param {Node} node node to check for
+     * @returns {boolean} true if connected false otherwise
+     */
+    isConnectedTo(node) {
+        console.log(this.connectedTo.includes(node));
+        if (this.connectedTo.includes(node) || node.connectedTo.includes(this)) {
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Connect this node to another
+     * @param {Node} toConnect node to connect to
+     * @returns {Connection} the connection that was made or null
+     */
+    addAsSourceConnection(toConnect) {
+        if (!this.isConnectedTo(toConnect)) {
+            let connection = new Connection(this.ctx, this, toConnect);
+            this.sourceFor.push(connection);
+            this.connectedTo.push(toConnect);
+            return connection;
+        }
+        return null;
     }
 }
 
@@ -98,12 +162,35 @@ class Node {
  */
 class Connection {
     /**
-     *
+     * @param {CanvasRenderingContext2D} ctx Canvas context for drawing
      * @param {Node} node1 Source node for the connection
      * @param {Node} node2 Destination node for the connection
      */
-    constructor(node1, node2) {
+    constructor(ctx, node1, node2) {
+        this.ctx = ctx;
         this.connect = new Pair(node1, node2);
+    }
+
+    display(xOffset, yOffset, scale = 1) {
+        this.ctx.lineWidth = 2 * scale;
+        this.ctx.strokeStyle = "black";
+
+        xOffset = xOffset * scale;
+        yOffset = yOffset * scale;
+        
+        let node1X = this.connect.first.position.first * scale - xOffset;
+        let node1Y = this.connect.first.position.second * scale - yOffset;
+        let node2X = this.connect.second.position.first * scale - xOffset;
+        let node2Y = this.connect.second.position.second * scale - yOffset;
+
+        this.ctx.beginPath();
+
+        this.ctx.moveTo(node1X, node1Y);
+        this.ctx.lineTo(node2X, node2Y);
+
+        this.ctx.stroke();
+
+        this.ctx.closePath();
     }
 }
 
@@ -136,7 +223,7 @@ class Visualizer {
 
         this.nodes = new Array();
 
-        this.connections = new Map();
+        this.connections = new Array();
     }
 
     addEventListener(name, callback) {
@@ -168,8 +255,54 @@ class Visualizer {
         return this.currentPosition.second;
     }
 
+    /**
+     * Check whether a node is currently on the display
+     * @param {Node} node Node to check display range for
+     * @returns {boolean} true if in range else false
+     */
+    isInDisplay(node) {
+        let scaledRadius = this.scale * 30;
+        let currentLeft = this.currentPosition.first;
+        let currentRight = currentLeft + (this.canvas.width / this.scale);
+        let currentTop = this.currentPosition.second;
+        let currentBottom = currentTop + (this.canvas.height / this.scale);
+
+        let nodeX = node.position.first;
+        let nodeY = node.position.second;
+
+        if (currentLeft <= nodeX + scaledRadius && nodeX - scaledRadius <= currentRight
+            && currentTop <= nodeY + scaledRadius && nodeY - scaledRadius <= currentBottom) {
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * 
+     * @param {Node} node1 
+     * @param {Node} node2 
+     */
+    addConnection(node1, node2) {
+        let newConnection = node1.addAsSourceConnection(node2);
+        if (newConnection) {
+            console.log(newConnection);
+            this.connections.push(newConnection);
+        }
+    }
+
+    setScale(newScale) {
+        this.scale = newScale;
+    }
+
     draw() {
-        this.canvas.width = window.innerWidth * .9725;
+        // try to align the width of the canvas with the navbar's width, otherwise hardcode a percentage
+        let menuTemplate = document.querySelector("#menu-draw");
+        let navBar = document.querySelector("#menu");
+        if (menuTemplate && navBar) {
+            this.canvas.width = menuTemplate.scrollWidth * 6 + ((navBar.scrollWidth *.02) * 4.25);
+        } else {
+            this.canvas.width = window.innerWidth * .9725;
+        }
         this.canvas.height = window.innerHeight * .85;
 
         this.canvas.style.marginTop = ".5%";
@@ -179,18 +312,18 @@ class Visualizer {
         this.canvas.style.borderColor = "black";
 
         let currentLeft = this.currentPosition.first;
-        let currentRight = currentLeft + this.canvas.width;
         let currentTop = this.currentPosition.second;
-        let currentBottom = currentTop + this.canvas.height;
 
-        let scaledRadius = this.scale * 30;
+        this.connections.forEach(connection => {
+            let node1 = connection.connect.first;
+            let node2 = connection.connect.second;
+            if (this.isInDisplay(node1) && this.isInDisplay(node2)) {
+                connection.display(currentLeft, currentTop, this.scale);
+            }
+        });
 
         this.nodes.forEach(node => {
-            let nodeX = node.position.first;
-            let nodeY = node.position.second;
-
-            if (currentLeft <= nodeX + scaledRadius && nodeX - scaledRadius <= currentRight
-                && currentTop <= nodeY + scaledRadius && nodeY - scaledRadius <= currentBottom) {
+            if (this.isInDisplay(node)) {
                 node.display(this.scale, currentLeft, currentTop);
             }
         });
@@ -211,17 +344,24 @@ class Visualizer {
         this.ctx.lineTo(40, 5);
         this.ctx.stroke();
 
-        let fontSize = 15 * this.scale;
+        let fontSize = 15;
         this.ctx.font = `${fontSize}px Arial`;
 
-        let xCoord = `X: ${this.getX()}`;
-        let yCoord = `Y: ${this.getY()}`;
+        let xCoord = `X: ${roundDecimal(this.getX(), 2)}`;
+        let yCoord = `Y: ${roundDecimal(this.getY(), 2)}`;
         this.ctx.fillText(xCoord, 45, 17);
-        this.ctx.fillText(yCoord, 2, 60)
+        this.ctx.fillText(yCoord, 2, 60);
+        let zoom = `Display scale: ${roundDecimal(this.scale, 1)}`;
+        this.ctx.fillText(zoom, 2, 80);
 
         this.ctx.closePath();
     }
 
+    /**
+     * Test whether the mouse collides with any nodes on screen
+     * @param {Pair} position x and y coordinates of mouse click
+     * @returns {Node} first node that mouse collides with (top if stacked)
+     */
     testHit(position) {
         let toReturn = null;
         // should return whatever is on the top since we reversed it
@@ -249,7 +389,6 @@ function getCursorPosition(canvas, event) {
 
 // wait until HTML content is loaded before we start manipulating it.
 document.addEventListener("DOMContentLoaded", () => {
-    var connectionMap = new Map();
     var visualizer = new Visualizer(document.getElementById("main"));
     var movingItem = false;
     var connecting = false;
@@ -263,11 +402,27 @@ document.addEventListener("DOMContentLoaded", () => {
     var deleteOption = document.getElementById("menu-delete");
     var saveAsHTMLOption = document.getElementById("menu-save-html");
     var saveAsCSVOption = document.getElementById("menu-save-csv");
+    var optionsArray = [drawOption, connectOption, moveNodeOption, deleteOption, saveAsHTMLOption, saveAsCSVOption];
 
     // the last position our mouse was dragged at (in this case, )
     var lastDraggingPosition = new Pair(0, 0);
     // the node that is being dragged
     var draggingNode = null;
+    // if we are connecting up nodes, this is the first.
+    var connectionSource = null
+
+    function clearOptions() {
+        movingItem = false;
+        connecting = false;
+        deleting = false;
+        dragging = false;
+        placing = false;
+        draggingNode = null;
+        connectionSource = null;
+        optionsArray.forEach(item => {
+            item.style.backgroundColor = "dimgray";
+        });
+    }
 
     visualizer.draw();
 
@@ -284,6 +439,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // draw menu option click logic
     drawOption.addEventListener("click", (event) => {
+        if (!placing) {
+            clearOptions();
+        }
         placing = !placing;
         if (placing) {
             drawOption.style.backgroundColor = "lightgray";
@@ -294,6 +452,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // draw menu option hover entry logic
     drawOption.addEventListener("mouseover", (event) =>{
+        drawOption.style.cursor = "pointer";
         if (!placing) {
             drawOption.style.backgroundColor = "lightgray";
         }
@@ -301,6 +460,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // draw menu option hover exit logic
     drawOption.addEventListener("mouseleave", (event) => {
+        drawOption.style.cursor = "default";
         if (!placing) {
             drawOption.style.backgroundColor = "dimgray";
         }
@@ -308,6 +468,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // move node menu option click logic
     moveNodeOption.addEventListener("click", (event) => {
+        if (!movingItem) {
+            clearOptions();
+        }
         movingItem = !movingItem;
         if (movingItem) {
             moveNodeOption.style.backgroundColor = "lightgray";
@@ -317,7 +480,8 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     // move node option hover entry logic
-    moveNodeOption.addEventListener("mouseover", (event) =>{
+    moveNodeOption.addEventListener("mouseover", (event) => {
+        moveNodeOption.style.cursor = "pointer";
         if (!movingItem) {
             moveNodeOption.style.backgroundColor = "lightgray";
         }
@@ -325,8 +489,39 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // move node option hover exit logic
     moveNodeOption.addEventListener("mouseleave", (event) => {
+        moveNodeOption.style.cursor = "default";
         if (!movingItem) {
             moveNodeOption.style.backgroundColor = "dimgray";
+        }
+    });
+
+    // connect nodes menu option click logic
+    connectOption.addEventListener("click", (event) => {
+        if (!connecting) {
+            clearOptions();
+        }
+        connecting = !connecting;
+        connectionSource = null;
+        if (connecting) {
+            connectOption.style.backgroundColor = "lightgray";
+        } else {
+            connectOption.style.backgroundColor = "dimgray";
+        }
+    });
+
+    // connect nodes option hover entry logic
+    connectOption.addEventListener("mouseover", (event) => {
+        connectOption.style.cursor = "pointer";
+        if (!connecting) {
+            connectOption.style.backgroundColor = "lightgray";
+        }
+    });
+
+    // connect nodes option hover exit logic
+    connectOption.addEventListener("mouseleave", (event) => {
+        connectOption.style.cursor = "default";
+        if (!connecting) {
+            connectOption.style.backgroundColor = "dimgray";
         }
     });
 
@@ -371,22 +566,25 @@ document.addEventListener("DOMContentLoaded", () => {
 
                 lastDraggingPosition = newPosition;
 
-                let newX = visualizer.getX() - diffX;
-                let newY = visualizer.getY() - diffY;
+                let newX = visualizer.getX() - (diffX / visualizer.scale);
+                let newY = visualizer.getY() - (diffY / visualizer.scale);
 
                 visualizer.setPosition(newX, newY);
-
-                visualizer.draw();
             } else if (!placing && !connecting && !deleting && movingItem && draggingNode) {
                 let newPosition = getCursorPosition(visualizer.canvas, event);
-                let xOffset = visualizer.getX();
-                let yOffset = visualizer.getY();
-                let newX = newPosition.first + xOffset;
-                let newY = newPosition.second + yOffset;
+                let xOffset = visualizer.getX() / visualizer.scale;
+                let yOffset = visualizer.getY() / visualizer.scale;
+                let newX = newPosition.first / visualizer.scale + xOffset;
+                let newY = newPosition.second / visualizer.scale + yOffset;
                 draggingNode.setPosition(newX, newY);
-
-                visualizer.draw();
             }
+            visualizer.draw();
+        }
+    });
+
+    visualizer.addEventListener("mouseover", event => {
+        if (placing) {
+            visualizer.canvas.style.cursor = "crosshair";
         }
     });
 
@@ -398,8 +596,35 @@ document.addEventListener("DOMContentLoaded", () => {
             }
             let offset = visualizer.currentPosition;
             let clickPos = getCursorPosition(visualizer.canvas, event);
-            let position = new Pair(clickPos.first + offset.first, clickPos.second + offset.second)
+            let position = new Pair((clickPos.first / visualizer.scale) + (offset.first / visualizer.scale), (clickPos.second / visualizer.scale) + (offset.second / visualizer.scale))
             visualizer.addNode(position, name);
+            clearOptions();
+            visualizer.draw();
+        } else if (connecting) {
+            if (!connectionSource) {
+                let hit = visualizer.testHit(getCursorPosition(visualizer.canvas, event));
+                if (hit) {
+                    connectionSource = hit;
+                }
+            } else {
+                let hit = visualizer.testHit(getCursorPosition(visualizer.canvas, event));
+                if (hit) {
+                    visualizer.addConnection(connectionSource, hit);
+                    clearOptions();
+                    visualizer.draw();
+                }
+            }
+        }
+    });
+
+    visualizer.addEventListener("wheel", event => {
+        // this is definitely buggy
+        if (!placing && !connecting && !deleting && !movingItem) {
+            if (event.deltaY < 0) {
+                visualizer.setScale(visualizer.scale + .1);
+            } else if (event.deltaY > 0) {
+                visualizer.setScale(visualizer.scale - .1);
+            }
             visualizer.draw();
         }
     });
