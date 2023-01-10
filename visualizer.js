@@ -22,7 +22,7 @@ class Pair {
 /**
  * A node to visualize
  */
-class Node {
+class VisualizerNode {
     /**
      *
      * @param {CanvasRenderingContext2D} ctx Context of the canvas
@@ -130,7 +130,7 @@ class Node {
 
     /**
      * Check if this node is connected to another
-     * @param {Node} node node to check for
+     * @param {VisualizerNode} node node to check for
      * @returns {boolean} true if connected false otherwise
      */
     isConnectedTo(node) {
@@ -141,9 +141,20 @@ class Node {
         return false;
     }
 
+    getConnections() {
+        return this.sourceFor;
+    }
+
+    removeAsSourceConnection(toRemove) {
+        let removeIdx = this.sourceFor.indexOf(toRemove);
+        if (removeIdx != undefined) {
+            this.sourceFor.splice(removeIdx, 1);
+        }
+    }
+
     /**
      * Connect this node to another
-     * @param {Node} toConnect node to connect to
+     * @param {VisualizerNode} toConnect node to connect to
      * @returns {Connection} the connection that was made or null
      */
     addAsSourceConnection(toConnect) {
@@ -163,12 +174,28 @@ class Node {
 class Connection {
     /**
      * @param {CanvasRenderingContext2D} ctx Canvas context for drawing
-     * @param {Node} node1 Source node for the connection
-     * @param {Node} node2 Destination node for the connection
+     * @param {VisualizerNode} node1 Source node for the connection
+     * @param {VisualizerNode} node2 Destination node for the connection
      */
     constructor(ctx, node1, node2) {
         this.ctx = ctx;
         this.connect = new Pair(node1, node2);
+    }
+
+    /**
+     *
+     * @returns {VisualizerNode} source node for connection
+     */
+    source() {
+        return this.connect.first;
+    }
+
+    /**
+     *
+     * @returns {VisualizerNode} destination node for connection
+     */
+    destination() {
+        return this.connect.second;
     }
 
     display(xOffset, yOffset, scale = 1) {
@@ -177,7 +204,7 @@ class Connection {
 
         xOffset = xOffset * scale;
         yOffset = yOffset * scale;
-        
+
         let node1X = this.connect.first.position.first * scale - xOffset;
         let node1Y = this.connect.first.position.second * scale - yOffset;
         let node2X = this.connect.second.position.first * scale - xOffset;
@@ -221,8 +248,10 @@ class Visualizer {
 
         this.scale = scale;
 
+        /** @type {Array<VisualizerNode>} */
         this.nodes = new Array();
 
+        /** @type {Array<Connection>} */
         this.connections = new Array();
     }
 
@@ -230,8 +259,8 @@ class Visualizer {
         this.canvas.addEventListener(name, callback);
     }
 
-    addNode(position, name) {
-        this.nodes.push(new Node(this.ctx, position, name))
+    addVisualizerNode(position, name) {
+        this.nodes.push(new VisualizerNode(this.ctx, position, name))
     }
 
     toCSV() {
@@ -257,7 +286,7 @@ class Visualizer {
 
     /**
      * Check whether a node is currently on the display
-     * @param {Node} node Node to check display range for
+     * @param {VisualizerNode} node VisualizerNode to check display range for
      * @returns {boolean} true if in range else false
      */
     isInDisplay(node) {
@@ -278,9 +307,9 @@ class Visualizer {
     }
 
     /**
-     * 
-     * @param {Node} node1 
-     * @param {Node} node2 
+     *
+     * @param {VisualizerNode} node1
+     * @param {VisualizerNode} node2
      */
     addConnection(node1, node2) {
         let newConnection = node1.addAsSourceConnection(node2);
@@ -288,6 +317,29 @@ class Visualizer {
             console.log(newConnection);
             this.connections.push(newConnection);
         }
+    }
+
+    /**
+     * Remove all connections from a node
+     * @param {VisualizerNode} node
+     */
+    removeConnectionsFor(node) {
+        let toRemove = new Array();
+        for (let i = 0; i < this.connections.length; i++) {
+            let connection = this.connections[i];
+            if (connection.source() == node || connection.destination() ==  node) {
+                if (node != connection.source()) {
+                    connection.source().removeAsSourceConnection(node);
+                } else {
+                    node.removeAsSourceConnection(connection.destination());
+                }
+                toRemove.push(connection);
+            }
+        }
+        toRemove.forEach(connection => {
+            let connIdx = this.connections.indexOf(connection);
+            this.connections.splice(connIdx, 1);
+        });
     }
 
     setScale(newScale) {
@@ -360,7 +412,7 @@ class Visualizer {
     /**
      * Test whether the mouse collides with any nodes on screen
      * @param {Pair} position x and y coordinates of mouse click
-     * @returns {Node} first node that mouse collides with (top if stacked)
+     * @returns {VisualizerNode} first node that mouse collides with (top if stacked)
      */
     testHit(position) {
         let toReturn = null;
@@ -398,16 +450,16 @@ document.addEventListener("DOMContentLoaded", () => {
     var navBar = document.getElementById("menu");
     var drawOption = document.getElementById("menu-draw");
     var connectOption = document.getElementById("menu-connect");
-    var moveNodeOption = document.getElementById("menu-move-node");
+    var moveVisualizerNodeOption = document.getElementById("menu-move-node");
     var deleteOption = document.getElementById("menu-delete");
     var saveAsHTMLOption = document.getElementById("menu-save-html");
     var saveAsCSVOption = document.getElementById("menu-save-csv");
-    var optionsArray = [drawOption, connectOption, moveNodeOption, deleteOption, saveAsHTMLOption, saveAsCSVOption];
+    var optionsArray = [drawOption, connectOption, moveVisualizerNodeOption, deleteOption, saveAsHTMLOption, saveAsCSVOption];
 
     // the last position our mouse was dragged at (in this case, )
     var lastDraggingPosition = new Pair(0, 0);
     // the node that is being dragged
-    var draggingNode = null;
+    var draggingVisualizerNode = null;
     // if we are connecting up nodes, this is the first.
     var connectionSource = null
 
@@ -417,7 +469,7 @@ document.addEventListener("DOMContentLoaded", () => {
         deleting = false;
         dragging = false;
         placing = false;
-        draggingNode = null;
+        draggingVisualizerNode = null;
         connectionSource = null;
         optionsArray.forEach(item => {
             item.style.backgroundColor = "dimgray";
@@ -467,31 +519,31 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     // move node menu option click logic
-    moveNodeOption.addEventListener("click", (event) => {
+    moveVisualizerNodeOption.addEventListener("click", (event) => {
         if (!movingItem) {
             clearOptions();
         }
         movingItem = !movingItem;
         if (movingItem) {
-            moveNodeOption.style.backgroundColor = "lightgray";
+            moveVisualizerNodeOption.style.backgroundColor = "lightgray";
         } else {
-            moveNodeOption.style.backgroundColor = "dimgray";
+            moveVisualizerNodeOption.style.backgroundColor = "dimgray";
         }
     });
 
     // move node option hover entry logic
-    moveNodeOption.addEventListener("mouseover", (event) => {
-        moveNodeOption.style.cursor = "pointer";
+    moveVisualizerNodeOption.addEventListener("mouseover", (event) => {
+        moveVisualizerNodeOption.style.cursor = "pointer";
         if (!movingItem) {
-            moveNodeOption.style.backgroundColor = "lightgray";
+            moveVisualizerNodeOption.style.backgroundColor = "lightgray";
         }
     });
 
     // move node option hover exit logic
-    moveNodeOption.addEventListener("mouseleave", (event) => {
-        moveNodeOption.style.cursor = "default";
+    moveVisualizerNodeOption.addEventListener("mouseleave", (event) => {
+        moveVisualizerNodeOption.style.cursor = "default";
         if (!movingItem) {
-            moveNodeOption.style.backgroundColor = "dimgray";
+            moveVisualizerNodeOption.style.backgroundColor = "dimgray";
         }
     });
 
@@ -525,6 +577,35 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     });
 
+    // delete node menu option click logic
+    deleteOption.addEventListener("click", (event) => {
+        if (!deleting) {
+            clearOptions();
+        }
+        deleting = !deleting;
+        if (deleting) {
+            deleteOption.style.backgroundColor = "lightgray";
+        } else {
+            deleteOption.style.backgroundColor = "dimgray";
+        }
+    });
+
+    // delete node option hover entry logic
+    deleteOption.addEventListener("mouseover", (event) => {
+        deleteOption.style.cursor = "pointer";
+        if (!deleting) {
+            deleteOption.style.backgroundColor = "lightgray";
+        }
+    });
+
+    // delete node option hover exit logic
+    deleteOption.addEventListener("mouseleave", (event) => {
+        deleteOption.style.cursor = "default";
+        if (!deleting) {
+            deleteOption.style.backgroundColor = "dimgray";
+        }
+    });
+
     visualizer.addEventListener("mousedown", event => {
         event.cancelBubble = true;
         event.stopPropagation();
@@ -533,12 +614,12 @@ document.addEventListener("DOMContentLoaded", () => {
         if (movingItem) {
             let hit = visualizer.testHit(getCursorPosition(visualizer.canvas, event));
             if (hit) {
-                draggingNode = hit;
+                draggingVisualizerNode = hit;
                 visualizer.canvas.style.cursor = "grab";
                 let movingIdx = visualizer.nodes.indexOf(hit);
                 if (movingIdx != null) {
                     visualizer.nodes.splice(movingIdx, 1);
-                    visualizer.nodes.push(draggingNode);
+                    visualizer.nodes.push(draggingVisualizerNode);
                 }
             }
         } else if (!placing && !connecting && !deleting && !movingItem) {
@@ -549,7 +630,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     visualizer.addEventListener("mouseup", event => {
         dragging = false;
-        draggingNode = null;
+        draggingVisualizerNode = null;
         visualizer.canvas.style.cursor = "default";
     });
 
@@ -570,13 +651,13 @@ document.addEventListener("DOMContentLoaded", () => {
                 let newY = visualizer.getY() - (diffY / visualizer.scale);
 
                 visualizer.setPosition(newX, newY);
-            } else if (!placing && !connecting && !deleting && movingItem && draggingNode) {
+            } else if (!placing && !connecting && !deleting && movingItem && draggingVisualizerNode) {
                 let newPosition = getCursorPosition(visualizer.canvas, event);
                 let xOffset = visualizer.getX() / visualizer.scale;
                 let yOffset = visualizer.getY() / visualizer.scale;
                 let newX = newPosition.first / visualizer.scale + xOffset;
                 let newY = newPosition.second / visualizer.scale + yOffset;
-                draggingNode.setPosition(newX, newY);
+                draggingVisualizerNode.setPosition(newX, newY);
             }
             visualizer.draw();
         }
@@ -589,6 +670,7 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     visualizer.addEventListener("click", event => {
+        let hit = visualizer.testHit(getCursorPosition(visualizer.canvas, event));
         if (placing) {
             let name = window.prompt("Enter an ID for the node", (visualizer.nodes.length + 1).toString());
             if (!name) {
@@ -596,21 +678,31 @@ document.addEventListener("DOMContentLoaded", () => {
             }
             let offset = visualizer.currentPosition;
             let clickPos = getCursorPosition(visualizer.canvas, event);
-            let position = new Pair((clickPos.first / visualizer.scale) + (offset.first / visualizer.scale), (clickPos.second / visualizer.scale) + (offset.second / visualizer.scale))
-            visualizer.addNode(position, name);
+            let position = new Pair((clickPos.first / visualizer.scale) +
+            (offset.first / visualizer.scale), (clickPos.second / visualizer.scale) + (offset.second / visualizer.scale))
+            visualizer.addVisualizerNode(position, name);
             clearOptions();
             visualizer.draw();
         } else if (connecting) {
             if (!connectionSource) {
-                let hit = visualizer.testHit(getCursorPosition(visualizer.canvas, event));
                 if (hit) {
                     connectionSource = hit;
                 }
             } else {
-                let hit = visualizer.testHit(getCursorPosition(visualizer.canvas, event));
                 if (hit) {
                     visualizer.addConnection(connectionSource, hit);
                     clearOptions();
+                    visualizer.draw();
+                }
+            }
+        } else if (deleting) {
+            console.log("deleting");
+            if (hit) {
+                let hitIdx = visualizer.nodes.indexOf(hit);
+                if (hitIdx != undefined) {
+                    console.log("in!");
+                    visualizer.removeConnectionsFor(hit);
+                    visualizer.nodes.splice(hitIdx, 1);
                     visualizer.draw();
                 }
             }
@@ -618,12 +710,18 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     visualizer.addEventListener("wheel", event => {
+        event.cancelBubble = true;
+        event.stopPropagation();
         // this is definitely buggy
         if (!placing && !connecting && !deleting && !movingItem) {
             if (event.deltaY < 0) {
-                visualizer.setScale(visualizer.scale + .1);
+                if (visualizer.scale < 2) {
+                    visualizer.setScale(visualizer.scale + .1);
+                }
             } else if (event.deltaY > 0) {
-                visualizer.setScale(visualizer.scale - .1);
+                if (visualizer.scale > .2) {
+                    visualizer.setScale(visualizer.scale - .1);
+                }
             }
             visualizer.draw();
         }
