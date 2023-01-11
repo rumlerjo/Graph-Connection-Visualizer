@@ -134,7 +134,6 @@ class VisualizerNode {
      * @returns {boolean} true if connected false otherwise
      */
     isConnectedTo(node) {
-        console.log(this.connectedTo.includes(node));
         if (this.connectedTo.includes(node) || node.connectedTo.includes(this)) {
             return true;
         }
@@ -162,6 +161,7 @@ class VisualizerNode {
             let connection = new Connection(this.ctx, this, toConnect);
             this.sourceFor.push(connection);
             this.connectedTo.push(toConnect);
+            toConnect.connectedTo.push(this);
             return connection;
         }
         return null;
@@ -228,7 +228,7 @@ class Visualizer {
     /**
      *
      * @param {HTMLCanvasElement} canvas The canvas to visualize on
-     * @param {number} scale The scale of the visualization
+     * @param {Number} scale The scale of the visualization
      */
     constructor(canvas, scale = 1) {
         if (!canvas) {
@@ -264,7 +264,39 @@ class Visualizer {
     }
 
     toCSV() {
-        //pass
+        /** @type {Map<String, Array<String>} */
+        let dataMap = new Map();
+
+        this.connections.forEach(connection => {
+            let arrSource = dataMap.get(connection.source().name);
+            let arrDest = dataMap.get(connection.destination().name);
+            if (!arrSource) {
+                dataMap.set(connection.source().name, new Array());
+                arrSource = dataMap.get(connection.source().name);
+            }
+            arrSource.push(connection.destination().name);
+
+            if (!arrDest) {
+                dataMap.set(connection.destination().name, new Array());
+                arrDest = dataMap.get(connection.destination().name);
+            }
+            arrDest.push(connection.source().name);
+        });
+
+        let CSVString = new String();
+
+        dataMap.forEach (
+            /**
+            * @param {Array<String>} value
+            * @param {String} key
+            */
+            function(value, key) {
+                let row = key + "," + value.join(",");
+                CSVString += row + "\n";
+            }
+        );
+
+        return CSVString;
     }
 
     getPosition() {
@@ -314,7 +346,6 @@ class Visualizer {
     addConnection(node1, node2) {
         let newConnection = node1.addAsSourceConnection(node2);
         if (newConnection) {
-            console.log(newConnection);
             this.connections.push(newConnection);
         }
     }
@@ -604,6 +635,29 @@ document.addEventListener("DOMContentLoaded", () => {
         if (!deleting) {
             deleteOption.style.backgroundColor = "dimgray";
         }
+    });
+
+    // save graph as CSV click logic (save CSV file)
+    saveAsCSVOption.addEventListener("click", event => {
+        /** @type {HTMLLinkElement} */
+        let csvButton = document.createElement('a');
+        csvButton.href = 'data:text/csv;charset=utf-8,' + encodeURI(visualizer.toCSV());
+
+        csvButton.download = "GraphData.csv";
+        csvButton.click();
+        delete csvButton;
+    });
+
+    // save graph as CSV option hover entry logic
+    saveAsCSVOption.addEventListener("mouseover", (event) => {
+        saveAsCSVOption.style.cursor = "pointer";
+        saveAsCSVOption.style.backgroundColor = "lightgray";
+    });
+
+    // save graph as CSV option hover exit logic
+    saveAsCSVOption.addEventListener("mouseleave", (event) => {
+        saveAsCSVOption.style.cursor = "default";
+        saveAsCSVOption.style.backgroundColor = "dimgray";
     });
 
     visualizer.addEventListener("mousedown", event => {
